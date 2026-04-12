@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply antialiased text-slate-800 bg-slate-50;
+}
+
+/* react-datepicker — di atas tombol floating */
+.react-datepicker-popper {
+  z-index: 100 !important;
+}
+
+.react-datepicker {
+  @apply rounded-xl border border-slate-200 font-sans shadow-xl;
+}
+
+.react-datepicker__header {
+  @apply rounded-t-xl border-b border-slate-200 bg-slate-50;
+}
+
+.react-datepicker__day-name,
+.react-datepicker__current-month,
+.react-datepicker-time__header {
+  @apply text-slate-600;
+}
+
+.react-datepicker__day--selected,
+.react-datepicker__day--keyboard-selected {
+  background-color: #0f172a !important;
+  color: #fff !important;
+}
+
+.react-datepicker__day:hover {
+  @apply bg-slate-200;
+}
+
+.react-datepicker__time-container
+  .react-datepicker__time
+  .react-datepicker__time-box
+  ul.react-datepicker__time-list
+  li.react-datepicker__time-list-item--selected {
+  background-color: #0f172a !important;
+  color: #fff !important;
+}
