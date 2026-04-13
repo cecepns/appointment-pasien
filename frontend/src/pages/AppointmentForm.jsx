@@ -266,7 +266,7 @@ export default function AppointmentForm() {
               <Banknote className="h-5 w-5 shrink-0 text-slate-600" />
               <div>
                 <p className="font-semibold text-slate-900">Rp. 300.000 — DP minimal</p>
-                <p className="text-sm text-slate-600">Transfer ke rekening BCA (sesuai instruksi klinik).</p>
+                <p className="text-sm text-slate-600">Transfer ke rekening BCA 2831724031.</p>
               </div>
             </div>
           </section>
