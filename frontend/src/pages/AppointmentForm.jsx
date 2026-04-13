@@ -13,8 +13,8 @@ import {
   ImagePlus,
   Banknote,
 } from "lucide-react";
-import SignaturePad from "../components/SignaturePad";
 import { apiUrl } from "../lib/api";
+import logo from "../assets/logo.png";
 import "react-datepicker/dist/react-datepicker.css";
 
 registerLocale("id", id);
@@ -32,6 +32,17 @@ function formatLocalDatetimeForMysql(date) {
   return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}:00`;
 }
 
+function createPlaceholderSignatureBlob() {
+  const base64 =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+kFhQAAAAASUVORK5CYII=";
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: "image/png" });
+}
+
 const inputClass =
   "w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-slate-900 outline-none ring-slate-400/20 transition focus:border-slate-400 focus:bg-white focus:ring-4";
 
@@ -46,7 +57,7 @@ export default function AppointmentForm() {
     treatment: "",
   });
   const [appointmentDate, setAppointmentDate] = useState(null);
-  const [signatureBlob, setSignatureBlob] = useState(null);
+  const [treatmentConsent, setTreatmentConsent] = useState(false);
   const [transferFile, setTransferFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
@@ -64,8 +75,8 @@ export default function AppointmentForm() {
       setError("Mohon pilih tanggal dan jam appointment.");
       return;
     }
-    if (!signatureBlob) {
-      setError("Mohon tanda tangan persetujuan treatment di bawah.");
+    if (!treatmentConsent) {
+      setError("Mohon centang persetujuan treatment.");
       return;
     }
     setSubmitting(true);
@@ -77,7 +88,8 @@ export default function AppointmentForm() {
       fd.append("allergy_history", form.allergy_history.trim());
       fd.append("phone_number", form.phone_number.trim());
       fd.append("treatment", form.treatment.trim());
-      fd.append("signature", signatureBlob, "signature.png");
+      fd.append("consent_treatment", treatmentConsent ? "1" : "0");
+      fd.append("signature", createPlaceholderSignatureBlob(), "consent-placeholder.png");
       if (transferFile) fd.append("transfer_proof", transferFile);
 
       const res = await fetch(apiUrl("/api/appointments"), {
@@ -117,13 +129,20 @@ export default function AppointmentForm() {
     <div className="min-h-screen bg-gradient-to-b from-slate-100 via-white to-slate-50">
       <header className="border-b border-slate-200/80 bg-white/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-4">
-          <div>
+          <div className="flex items-center gap-3">
+            <img
+              src={logo}
+              alt="Zeline Aesthetic Beauty"
+              className="h-14 w-auto rounded-lg object-cover"
+            />
+            <div>
             <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
               Form appointment
             </p>
             <h1 className="font-display text-xl font-semibold text-slate-900 sm:text-2xl">
               Pasien & persetujuan treatment
             </h1>
+            </div>
           </div>
           <div className="hidden rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 sm:block">
             Homecare & klinik
@@ -266,15 +285,26 @@ export default function AppointmentForm() {
 
           <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-8">
             <h2 className="font-display text-lg font-semibold text-slate-900">
-              Surat persetujuan treatment
+              Persetujuan treatment
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Dengan menandatangani di bawah, saya menyatakan persetujuan untuk treatment yang
-              dijelaskan dan memahami tidak ada paksaan dari kedua pihak.
+              Silakan centang persetujuan berikut sebelum mengirim appointment.
             </p>
-            <div className="mt-5">
-              <SignaturePad onChange={setSignatureBlob} />
-            </div>
+            <label className="mt-5 flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <input
+                type="checkbox"
+                checked={treatmentConsent}
+                onChange={(e) => {
+                  setTreatmentConsent(e.target.checked);
+                  setError("");
+                }}
+                className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+              />
+              <span className="text-sm text-slate-700">
+                Saya menyatakan setuju untuk treatment yang dijelaskan dan memahami tidak ada
+                paksaan dari kedua pihak.
+              </span>
+            </label>
           </section>
 
           <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-8">
