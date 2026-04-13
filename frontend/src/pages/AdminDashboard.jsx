@@ -10,7 +10,7 @@ import {
   Filter,
   Stethoscope,
   Image as ImageIcon,
-  PenLine,
+  Save,
   Search,
   ChevronLeft,
   ChevronRight,
@@ -54,6 +54,16 @@ function formatDt(iso) {
   });
 }
 
+function toDatetimeLocalValue(value) {
+  if (!value) return "";
+  return String(value).replace(" ", "T").slice(0, 16);
+}
+
+function toMysqlDatetime(value) {
+  if (!value) return "";
+  return `${String(value).replace("T", " ")}:00`;
+}
+
 export default function AdminDashboard() {
   const [usernameInput, setUsernameInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
@@ -83,6 +93,8 @@ export default function AdminDashboard() {
   const [listLoading, setListLoading] = useState(false);
   const [err, setErr] = useState("");
   const [detail, setDetail] = useState(null);
+  const [detailForm, setDetailForm] = useState(null);
+  const [detailSaving, setDetailSaving] = useState(false);
 
   const authHeaders = useMemo(
     () =>
@@ -205,6 +217,7 @@ export default function AdminDashboard() {
     setList([]);
     setStats(null);
     setDetail(null);
+    setDetailForm(null);
     setSearchInput("");
     setDebouncedSearch("");
     setPage(1);
@@ -253,12 +266,22 @@ export default function AdminDashboard() {
     try {
       const row = await fetchJson(`/api/appointments/${id}`, { headers: authHeaders });
       setDetail(row);
+      setDetailForm({
+        full_name: row.full_name || "",
+        appointment_datetime: toDatetimeLocalValue(row.appointment_datetime),
+        homecare_address: row.homecare_address || "",
+        allergy_history: row.allergy_history || "",
+        phone_number: row.phone_number || "",
+        treatment: row.treatment || "",
+        admin_note: row.admin_note || "",
+      });
     } catch (e) {
       if (e.status === 401) {
         sessionStorage.removeItem(tokenStorageKey());
         sessionStorage.removeItem(usernameStorageKey());
         setToken("");
         setAdminUsername("");
+        setDetailForm(null);
         setErr("Sesi habis, silakan login lagi.");
       } else setErr(e.message || "Gagal memuat detail");
     }
@@ -282,8 +305,47 @@ export default function AdminDashboard() {
         setToken("");
         setAdminUsername("");
         setDetail(null);
+        setDetailForm(null);
         setErr("Sesi habis, silakan login lagi.");
       } else setErr(e.message || "Gagal update status");
+    }
+  };
+
+  const saveDetail = async () => {
+    if (!detail || !detailForm) return;
+    setDetailSaving(true);
+    setErr("");
+    try {
+      const res = await fetchJson(`/api/appointments/${detail.id}`, {
+        method: "PATCH",
+        headers: { ...authHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          full_name: detailForm.full_name,
+          appointment_datetime: toMysqlDatetime(detailForm.appointment_datetime),
+          homecare_address: detailForm.homecare_address,
+          allergy_history: detailForm.allergy_history,
+          phone_number: detailForm.phone_number,
+          treatment: detailForm.treatment,
+          admin_note: detailForm.admin_note,
+        }),
+      });
+      if (res?.data) {
+        setDetail(res.data);
+        setDetailForm({
+          full_name: res.data.full_name || "",
+          appointment_datetime: toDatetimeLocalValue(res.data.appointment_datetime),
+          homecare_address: res.data.homecare_address || "",
+          allergy_history: res.data.allergy_history || "",
+          phone_number: res.data.phone_number || "",
+          treatment: res.data.treatment || "",
+          admin_note: res.data.admin_note || "",
+        });
+      }
+      await fetchList(undefined);
+    } catch (e) {
+      setErr(e.message || "Gagal menyimpan perubahan detail");
+    } finally {
+      setDetailSaving(false);
     }
   };
 
@@ -628,14 +690,20 @@ export default function AdminDashboard() {
             type="button"
             className="absolute inset-0 cursor-default"
             aria-label="Tutup"
-            onClick={() => setDetail(null)}
+            onClick={() => {
+              setDetail(null);
+              setDetailForm(null);
+            }}
           />
           <div className="relative z-50 max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl">
             <div className="sticky top-0 flex items-center justify-between border-b border-slate-100 bg-white px-5 py-4">
               <h2 className="font-display text-lg font-semibold">Detail #{detail.id}</h2>
               <button
                 type="button"
-                onClick={() => setDetail(null)}
+                onClick={() => {
+                  setDetail(null);
+                  setDetailForm(null);
+                }}
                 className="rounded-full p-2 text-slate-500 hover:bg-slate-100"
               >
                 <X className="h-5 w-5" />
@@ -661,64 +729,116 @@ export default function AdminDashboard() {
                   ))}
                 </div>
               </div>
-              <Field label="Nama" value={detail.full_name} />
-              <Field label="Jam & tanggal" value={formatDt(detail.appointment_datetime)} />
-              <Field label="Alamat homecare" value={detail.homecare_address} />
-              <Field label="Riwayat alergi" value={detail.allergy_history || "—"} />
-              <Field label="Nomor aktif" value={detail.phone_number} />
-              <div>
-                <p className="text-xs font-medium uppercase text-slate-400">Treatment</p>
-                <p className="mt-1 flex items-start gap-2 text-sm text-slate-800">
-                  <Stethoscope className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" />
-                  {detail.treatment}
-                </p>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <p className="mb-2 flex items-center gap-1 text-xs font-medium uppercase text-slate-400">
-                    <PenLine className="h-3.5 w-3.5" />
-                    Tanda tangan
-                  </p>
-                  {detail.signature_path ? (
-                    <a
-                      href={apiUrl(`/uploads/${detail.signature_path}`)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="block overflow-hidden rounded-xl border border-slate-200 bg-slate-50"
-                    >
-                      <img
-                        src={apiUrl(`/uploads/${detail.signature_path}`)}
-                        alt="Signature"
-                        className="max-h-48 w-full object-contain"
+              {detailForm && (
+                <>
+                  <label className="block">
+                    <span className="text-xs font-medium uppercase text-slate-400">Nama</span>
+                    <input
+                      type="text"
+                      value={detailForm.full_name}
+                      onChange={(e) => setDetailForm((v) => ({ ...v, full_name: e.target.value }))}
+                      className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-4 focus:ring-slate-400/20"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs font-medium uppercase text-slate-400">Jam & tanggal</span>
+                    <input
+                      type="datetime-local"
+                      value={detailForm.appointment_datetime}
+                      onChange={(e) =>
+                        setDetailForm((v) => ({ ...v, appointment_datetime: e.target.value }))
+                      }
+                      className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-4 focus:ring-slate-400/20"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs font-medium uppercase text-slate-400">Alamat homecare</span>
+                    <textarea
+                      rows={3}
+                      value={detailForm.homecare_address}
+                      onChange={(e) =>
+                        setDetailForm((v) => ({ ...v, homecare_address: e.target.value }))
+                      }
+                      className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-4 focus:ring-slate-400/20"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs font-medium uppercase text-slate-400">Riwayat alergi</span>
+                    <textarea
+                      rows={2}
+                      value={detailForm.allergy_history}
+                      onChange={(e) =>
+                        setDetailForm((v) => ({ ...v, allergy_history: e.target.value }))
+                      }
+                      className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-4 focus:ring-slate-400/20"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs font-medium uppercase text-slate-400">Nomor aktif</span>
+                    <input
+                      type="text"
+                      value={detailForm.phone_number}
+                      onChange={(e) => setDetailForm((v) => ({ ...v, phone_number: e.target.value }))}
+                      className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-4 focus:ring-slate-400/20"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs font-medium uppercase text-slate-400">Treatment</span>
+                    <div className="mt-1.5 flex items-start gap-2 rounded-xl border border-slate-200 px-3 py-2">
+                      <Stethoscope className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" />
+                      <textarea
+                        rows={3}
+                        value={detailForm.treatment}
+                        onChange={(e) => setDetailForm((v) => ({ ...v, treatment: e.target.value }))}
+                        className="w-full text-sm text-slate-900 outline-none"
                       />
-                    </a>
-                  ) : (
-                    <p className="text-sm text-slate-500">—</p>
-                  )}
-                </div>
-                <div>
-                  <p className="mb-2 flex items-center gap-1 text-xs font-medium uppercase text-slate-400">
-                    <ImageIcon className="h-3.5 w-3.5" />
-                    Bukti transfer
-                  </p>
-                  {detail.transfer_proof_path ? (
-                    <a
-                      href={apiUrl(`/uploads/${detail.transfer_proof_path}`)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="block overflow-hidden rounded-xl border border-slate-200 bg-slate-50"
-                    >
-                      <img
-                        src={apiUrl(`/uploads/${detail.transfer_proof_path}`)}
-                        alt="Bukti"
-                        className="max-h-48 w-full object-contain"
-                      />
-                    </a>
-                  ) : (
-                    <p className="text-sm text-slate-500">Belum diunggah</p>
-                  )}
-                </div>
-              </div>
+                    </div>
+                  </label>
+                  <div>
+                    <p className="mb-2 flex items-center gap-1 text-xs font-medium uppercase text-slate-400">
+                      <ImageIcon className="h-3.5 w-3.5" />
+                      Bukti transfer
+                    </p>
+                    {detail.transfer_proof_path ? (
+                      <a
+                        href={apiUrl(`/uploads/${detail.transfer_proof_path}`)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block overflow-hidden rounded-xl border border-slate-200 bg-slate-50"
+                      >
+                        <img
+                          src={apiUrl(`/uploads/${detail.transfer_proof_path}`)}
+                          alt="Bukti"
+                          className="max-h-48 w-full object-contain"
+                        />
+                      </a>
+                    ) : (
+                      <p className="text-sm text-slate-500">Belum diunggah</p>
+                    )}
+                  </div>
+                  <label className="block">
+                    <span className="text-xs font-medium uppercase text-slate-400">
+                      Catatan admin (setelah treatment)
+                    </span>
+                    <textarea
+                      rows={4}
+                      value={detailForm.admin_note}
+                      onChange={(e) => setDetailForm((v) => ({ ...v, admin_note: e.target.value }))}
+                      placeholder="Contoh: tindakan A + tindakan B, total Rp ..."
+                      className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-4 focus:ring-slate-400/20"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={saveDetail}
+                    disabled={detailSaving}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                  >
+                    <Save className="h-4 w-4" />
+                    {detailSaving ? "Menyimpan..." : "Simpan perubahan data pasien"}
+                  </button>
+                </>
+              )}
               <p className="text-xs text-slate-400">Dibuat: {formatDt(detail.created_at)}</p>
             </div>
           </div>
@@ -728,11 +848,3 @@ export default function AdminDashboard() {
   );
 }
 
-function Field({ label, value }) {
-  return (
-    <div>
-      <p className="text-xs font-medium uppercase text-slate-400">{label}</p>
-      <p className="mt-1 text-sm text-slate-800">{value}</p>
-    </div>
-  );
-}

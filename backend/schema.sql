@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS appointments (
   treatment TEXT NOT NULL,
   signature_path VARCHAR(512) NULL COMMENT 'Relatif ke folder upload',
   transfer_proof_path VARCHAR(512) NULL COMMENT 'Bukti transfer',
+  admin_note TEXT NULL COMMENT 'Catatan admin untuk hasil treatment',
   status ENUM('pending', 'confirmed', 'cancelled', 'completed') NOT NULL DEFAULT 'pending',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

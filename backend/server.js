@@ -51,6 +51,16 @@ const appointmentUpload = upload.fields([
   { name: "transfer_proof", maxCount: 1 },
 ]);
 
+async function ensureAppointmentColumns() {
+  try {
+    await pool.execute(
+      "ALTER TABLE appointments ADD COLUMN admin_note TEXT NULL COMMENT 'Catatan admin untuk hasil treatment' AFTER transfer_proof_path"
+    );
+  } catch (e) {
+    if (e.code !== "ER_DUP_FIELDNAME") throw e;
+  }
+}
+
 function adminMiddleware(req, res, next) {
   const auth = req.headers.authorization || "";
   const m = auth.match(/^Bearer\s+(.+)$/i);
@@ -164,8 +174,8 @@ app.post("/api/appointments", (req, res) => {
 
       const [result] = await pool.execute(
         `INSERT INTO appointments
-        (full_name, appointment_datetime, homecare_address, allergy_history, phone_number, treatment, signature_path, transfer_proof_path)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        (full_name, appointment_datetime, homecare_address, allergy_history, phone_number, treatment, signature_path, transfer_proof_path, admin_note)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           String(full_name).trim(),
           appointment_datetime,
@@ -175,6 +185,7 @@ app.post("/api/appointments", (req, res) => {
           String(treatment).trim(),
           signature_path,
           transfer_proof_path,
+          null,
         ]
       );
 
@@ -208,9 +219,9 @@ app.get("/api/appointments", adminMiddleware, async (req, res) => {
     if (search) {
       const term = `%${search}%`;
       whereParts.push(
-        `(full_name LIKE ? OR phone_number LIKE ? OR homecare_address LIKE ? OR treatment LIKE ? OR IFNULL(allergy_history,'') LIKE ?)`
+        `(full_name LIKE ? OR phone_number LIKE ? OR homecare_address LIKE ? OR treatment LIKE ? OR IFNULL(allergy_history,'') LIKE ? OR IFNULL(admin_note,'') LIKE ?)`
       );
-      params.push(term, term, term, term, term);
+      params.push(term, term, term, term, term, term);
     }
 
     const whereClause = whereParts.length ? `WHERE ${whereParts.join(" AND ")}` : "";
@@ -221,7 +232,7 @@ app.get("/api/appointments", adminMiddleware, async (req, res) => {
     const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
 
     const listSql = `SELECT id, full_name, appointment_datetime, homecare_address, allergy_history,
-      phone_number, treatment, signature_path, transfer_proof_path, status, created_at
+      phone_number, treatment, transfer_proof_path, admin_note, status, created_at
       FROM appointments ${whereClause}
       ORDER BY appointment_datetime DESC, id DESC
       LIMIT ? OFFSET ?`;
@@ -274,16 +285,76 @@ app.get("/api/appointments/:id", adminMiddleware, async (req, res) => {
 app.patch("/api/appointments/:id", adminMiddleware, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { status } = req.body || {};
-    if (!id || !["pending", "confirmed", "cancelled", "completed"].includes(status)) {
-      return res.status(400).json({ error: "Payload tidak valid" });
+    if (!id) return res.status(400).json({ error: "ID tidak valid" });
+
+    const body = req.body || {};
+    const updates = [];
+    const params = [];
+
+    if (Object.prototype.hasOwnProperty.call(body, "status")) {
+      if (!["pending", "confirmed", "cancelled", "completed"].includes(body.status)) {
+        return res.status(400).json({ error: "Status tidak valid" });
+      }
+      updates.push("status = ?");
+      params.push(body.status);
     }
-    const [r] = await pool.execute(`UPDATE appointments SET status = ? WHERE id = ?`, [
-      status,
-      id,
-    ]);
+
+    if (Object.prototype.hasOwnProperty.call(body, "full_name")) {
+      const v = String(body.full_name || "").trim();
+      if (!v) return res.status(400).json({ error: "Nama wajib diisi" });
+      updates.push("full_name = ?");
+      params.push(v);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "appointment_datetime")) {
+      const v = String(body.appointment_datetime || "").trim();
+      if (!v) return res.status(400).json({ error: "Tanggal appointment wajib diisi" });
+      updates.push("appointment_datetime = ?");
+      params.push(v);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "homecare_address")) {
+      const v = String(body.homecare_address || "").trim();
+      if (!v) return res.status(400).json({ error: "Alamat homecare wajib diisi" });
+      updates.push("homecare_address = ?");
+      params.push(v);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "allergy_history")) {
+      const v = String(body.allergy_history || "").trim();
+      updates.push("allergy_history = ?");
+      params.push(v || null);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "phone_number")) {
+      const v = String(body.phone_number || "").trim();
+      if (!v) return res.status(400).json({ error: "Nomor aktif wajib diisi" });
+      updates.push("phone_number = ?");
+      params.push(v);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "treatment")) {
+      const v = String(body.treatment || "").trim();
+      if (!v) return res.status(400).json({ error: "Treatment wajib diisi" });
+      updates.push("treatment = ?");
+      params.push(v);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "admin_note")) {
+      const v = String(body.admin_note || "").trim();
+      updates.push("admin_note = ?");
+      params.push(v || null);
+    }
+
+    if (!updates.length) {
+      return res.status(400).json({ error: "Tidak ada data untuk diperbarui" });
+    }
+
+    params.push(id);
+    const [r] = await pool.execute(`UPDATE appointments SET ${updates.join(", ")} WHERE id = ?`, params);
     if (r.affectedRows === 0) return res.status(404).json({ error: "Tidak ditemukan" });
-    res.json({ ok: true, id, status });
+    const [rows] = await pool.execute(`SELECT * FROM appointments WHERE id = ? LIMIT 1`, [id]);
+    res.json({ ok: true, data: rows[0] || null });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Gagal memperbarui" });
@@ -295,6 +366,16 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: "Server error" });
 });
 
-app.listen(PORT, () => {
-  console.log(`API appointment listening on http://localhost:${PORT}`);
-});
+async function start() {
+  try {
+    await ensureAppointmentColumns();
+    app.listen(PORT, () => {
+      console.log(`API appointment listening on http://localhost:${PORT}`);
+    });
+  } catch (e) {
+    console.error("Gagal menyiapkan schema:", e);
+    process.exit(1);
+  }
+}
+
+start();
